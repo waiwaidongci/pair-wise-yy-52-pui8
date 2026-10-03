@@ -1,4 +1,4 @@
-import type { AuditEvent, Permit } from '~/types'
+import type { AuditEvent, FieldMessage, GateRecord, Permit } from '~/types'
 
 export const permits: Permit[] = [
   {
@@ -20,7 +20,7 @@ export const permits: Permit[] = [
     isolationPoints: [
       { id: 'IP-411', device: 'LINE-A2', label: 'A2 进线断路器', type: '开关', state: '待操作' },
       { id: 'IP-412', device: 'LINE-A2', label: '17 号杆接地刀闸', type: '接地', state: '待操作' },
-      { id: 'IP-413', device: 'BUS-A', label: '母线侧隔离刀闸', type: '刀闸', state: '已隔离' },
+      { id: 'IP-413', device: 'BUS-A', label: '母线侧隔离刀闸', type: '刀闸', state: '已隔离', boundary: 'BUS-A' },
     ],
     steps: [
       { id: 'ST-11', text: '核对线路双重名称与停电范围', done: true, owner: '何岚' },
@@ -30,8 +30,58 @@ export const permits: Permit[] = [
   },
   {
     id: 'WP-260930-004', title: '箱变 12 温控器更换', device: 'BOX-12', crew: '电气一班', owner: '孙禾', window: '09-30 08:00 — 12:00', status: '待执行', risk: '二级', revision: 1, reviewRequired: false,
-    isolationPoints: [{ id: 'IP-501', device: 'BOX-12', label: '高压负荷开关', type: '开关', state: '待操作' }],
+    isolationPoints: [{ id: 'IP-501', device: 'BOX-12', label: '高压负荷开关', type: '开关', state: '待操作', boundary: 'BUS-A' }],
     steps: [{ id: 'ST-21', text: '核对箱变编号和低压侧负荷转移', done: true, owner: '孙禾' }, { id: 'ST-22', text: '断开高压负荷开关并锁定', done: false, owner: '孙禾' }],
+  },
+]
+
+/**
+ * 门禁记录种子：BUS-A 边界先到者得独占窗口。
+ * 线路一班（09-29 18:00 窗）先登记 → 独占中；电气一班（09-30 08:00 窗）后到 → 候场中。
+ */
+export const gateRecords: GateRecord[] = [
+  {
+    id: 'GR-SEED-01', permitId: 'WP-260929-021', crew: '线路一班', boundary: 'BUS-A',
+    isolationPointIds: ['IP-413'], window: '09-29 18:00 — 30 02:00', status: '独占中',
+    claimedAt: Date.now() - 1000 * 60 * 60 * 2,
+    exitConditions: [
+      { id: 'EC-IP-413', label: '恢复 BUS-A 母线侧隔离刀闸', satisfied: false },
+      { id: 'EC-HANDOVER', label: '班组交接签字', satisfied: false },
+      { id: 'EC-CLOSE', label: '许可关闭', satisfied: false },
+    ],
+    handover: { from: '线路一班', to: '电气一班', signed: false },
+  },
+  {
+    id: 'GR-SEED-02', permitId: 'WP-260930-004', crew: '电气一班', boundary: 'BUS-A',
+    isolationPointIds: ['IP-501'], window: '09-30 08:00 — 12:00', status: '候场中',
+    claimedAt: Date.now() - 1000 * 60 * 60,
+    exitConditions: [
+      { id: 'EC-IP-501', label: '恢复 BOX-12 高压负荷开关', satisfied: false },
+      { id: 'EC-HANDOVER', label: '班组交接签字', satisfied: false },
+      { id: 'EC-CLOSE', label: '许可关闭', satisfied: false },
+    ],
+    handover: { from: '电气一班', to: '', signed: false },
+  },
+]
+
+/**
+ * 现场报文种子：一条已确认（检查点）+ 一条断网待重放。
+ * 重放沿用最初凭据（operator + confirmedAt），操作号稳定不变。
+ */
+export const fieldMessages: FieldMessage[] = [
+  {
+    id: 'FM-SEED-01', operationNo: 'OP-WP-260929-021-01', gateRecordId: 'GR-SEED-01',
+    permitId: 'WP-260929-021', pointId: 'IP-411', action: '断开',
+    readingDigest: 'A2 进线 0kV · 电流 0A · 开关分位',
+    credentials: { operator: '孙禾', confirmedAt: Date.now() - 1000 * 60 * 30 },
+    status: '已确认', checkpoint: true,
+  },
+  {
+    id: 'FM-SEED-02', operationNo: 'OP-WP-260929-021-02', gateRecordId: 'GR-SEED-01',
+    permitId: 'WP-260929-021', pointId: 'IP-412', action: '接地',
+    readingDigest: '17 号杆 0kV · 接地刀闸合位',
+    credentials: { operator: '孙禾', confirmedAt: Date.now() - 1000 * 60 * 10 },
+    status: '待重放',
   },
 ]
 
